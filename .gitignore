@@ -1,0 +1,4 @@
+venv
+.env
+weights
+__pycache__
