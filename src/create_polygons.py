@@ -176,3 +176,54 @@ def create_height_map(
                         height_map[row, col] = h
 
     return height_map
+
+
+def create_surface_map(
+    polygons_by_idx: Dict[np.uint8, List[Polygon]],
+    resolution: int = 1,
+) -> np.ndarray:
+    """
+    Создаёт numpy карту высот из словаря полигонов.
+
+    :param polygons_by_idx: Словарь {номер поверхности: [список полигонов (shapely.geometry.Polygon)]}
+    :param resolution: Разрешение сетки (шаг между точками по X и Y).
+    :return: numpy массив, представляющий карту высот.
+    """
+    # Определение границ всех полигонов
+    min_x, min_y = float('inf'), float('inf')
+    max_x, max_y = float('-inf'), float('-inf')
+
+    for _, polygon in polygons_by_idx.items():
+        bounds = polygon.bounds  # (minx, miny, maxx, maxy)
+        min_x = min(min_x, bounds[0])
+        min_y = min(min_y, bounds[1])
+        max_x = max(max_x, bounds[2])
+        max_y = max(max_y, bounds[3])
+
+    # Создание пустой карты высот
+    width = int((max_x - min_x) / resolution) + 1
+    height = int((max_y - min_y) / resolution) + 1
+    height_map = np.zeros((height, width))
+
+    # Заполнение карты высот
+    for idx, polygon in polygons_by_idx.items():
+        if polygon.is_empty:
+            continue
+        area_threshold = 100
+        if polygon.area < area_threshold:
+            continue  # Пропускаем слишком маленькие полигоны
+        # Получение индексов точек внутри полигона
+        min_row = int((polygon.bounds[1] - min_y) / resolution)
+        max_row = int((polygon.bounds[3] - min_y) / resolution)
+        min_col = int((polygon.bounds[0] - min_x) / resolution)
+        max_col = int((polygon.bounds[2] - min_x) / resolution)
+        
+        for row in range(min_row, max_row + 1):
+            for col in range(min_col, max_col + 1):
+                x = min_x + col * resolution
+                y = min_y + row * resolution
+                point = Point([(x, y)])
+                if polygon.contains(point):
+                    height_map[row, col] = idx
+
+    return height_map
