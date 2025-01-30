@@ -63,7 +63,7 @@ def snap_to_grid(polygon: Polygon, resolution: float):
     # Создание нового полигона с выровненными координатами
     snapped_polygon = Polygon(snapped_coords)
     
-    return snapped_polygon, np.array(snapped_coords[:-1])
+    return snapped_polygon, np.array(snapped_coords[:-1]), min_rect,
 
 
 def create_grid_lines(
@@ -252,3 +252,58 @@ def convert_to_rectangles(
         contours_dict_new[key] = contours
     
     return contours_dict_new
+
+
+def minimum_rectangle(polygon: Polygon) -> Tuple[Polygon, list]:
+    """
+    Приводит полигон к ближайшему прямоугольному виду по сетке с разрешением resolution.
+    
+    :param polygon: Shapely Polygon
+    :return: Новый полигон, выровненный по сетке
+    """
+    min_rect = polygon.minimum_rotated_rectangle
+    
+    return min_rect, np.array(min_rect.exterior.coords)
+
+def create_grid_lines_from_rect(rect_coords: np.ndarray, resolution: float):
+    """
+    Создает линии сетки внутри повернутого bounding box без матрицы поворота.
+    
+    :param min_rect: Shapely Polygon — минимальный охватывающий прямоугольник
+    :param rect_coords: Координаты углов прямоугольника (4x2 массив)
+    :param resolution: Разрешение сетки
+    :return: Горизонтальные и вертикальные линии в исходной системе координат
+    """
+    # Вектора сторон прямоугольника
+    vec1 = rect_coords[1] - rect_coords[0]  # Первый вектор (длина)
+    vec2 = rect_coords[3] - rect_coords[0]  # Второй вектор (ширина)
+
+    # Нормализуем вектора
+    vec1 /= np.linalg.norm(vec1)
+    vec2 /= np.linalg.norm(vec2)
+
+    # Определяем размеры bounding box
+    length = np.linalg.norm(rect_coords[1] - rect_coords[0])
+    width = np.linalg.norm(rect_coords[3] - rect_coords[0])
+
+    # Генерируем координаты сетки вдоль первой и второй оси
+    num_steps_1 = int(np.ceil(length / resolution)) + 1
+    num_steps_2 = int(np.ceil(width / resolution)) + 1
+
+    # Генерация точек вдоль первой оси
+    line1_points = [rect_coords[0] + vec1 * i * resolution for i in range(num_steps_1)]
+    line2_points = [rect_coords[0] + vec2 * i * resolution for i in range(num_steps_2)]
+
+    # Генерация горизонтальных линий
+    h_lines = []
+    for p in line2_points:
+        line = [p + vec1 * 0, p + vec1 * length]  # Линия вдоль vec1
+        h_lines.append(line)
+
+    # Генерация вертикальных линий
+    v_lines = []
+    for p in line1_points:
+        line = [p + vec2 * 0, p + vec2 * width]  # Линия вдоль vec2
+        v_lines.append(line)
+
+    return np.array(h_lines), np.array(v_lines)
