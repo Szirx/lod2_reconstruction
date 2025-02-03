@@ -181,12 +181,14 @@ def create_height_map(
 def create_surface_map(
     polygons_by_idx: Dict[np.uint8, List[Polygon]],
     resolution: int = 1,
+    area_threshold: float = 100,
 ) -> np.ndarray:
     """
     Создаёт numpy карту высот из словаря полигонов.
 
     :param polygons_by_idx: Словарь {номер поверхности: [список полигонов (shapely.geometry.Polygon)]}
     :param resolution: Разрешение сетки (шаг между точками по X и Y).
+    :param area_threshold: Порог для вычеркивания слишком маленьких полигонов.
     :return: numpy массив, представляющий карту высот.
     """
     # Определение границ всех полигонов
@@ -209,7 +211,6 @@ def create_surface_map(
     for idx, polygon in polygons_by_idx.items():
         if polygon.is_empty:
             continue
-        area_threshold = 100
         if polygon.area < area_threshold:
             continue  # Пропускаем слишком маленькие полигоны
         # Получение индексов точек внутри полигона
