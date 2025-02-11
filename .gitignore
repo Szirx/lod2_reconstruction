@@ -2,3 +2,6 @@ venv
 .env
 weights
 __pycache__
+images/area*
+*.DS_Store
+vaihingen.pt
