@@ -29,12 +29,6 @@ def apply_canny_to_mask(image: np.ndarray, mask: np.ndarray) -> np.ndarray:
     blurred = cv2.GaussianBlur(gray_image, (5, 5), 0)
     
     # Применяем фильтр Canny для выявления краев
-    edges = cv2.Canny(blurred, 100, 200)  # Параметры могут быть настроены
+    edges = cv2.Canny(blurred, 100, 300)  # Параметры могут быть настроены
     
     return edges
-
-def thin_contours(edges: np.ndarray) -> np.ndarray:
-    # Применяем эрозию, чтобы сделать контуры тонкими (шириной в 1 пиксель)
-    kernel = np.ones((3, 3), np.uint8)  # 3x3 ядро для эрозии
-    thinned = cv2.erode(edges, kernel, iterations=1)  # Применяем эрозию
-    return thinned

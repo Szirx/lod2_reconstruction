@@ -226,5 +226,10 @@ def create_surface_map(
                 point = Point([(x, y)])
                 if polygon.contains(point):
                     height_map[row, col] = idx
+    
+    coords = (
+        slice(round(min_x), round(min_x + width)),
+        slice(round(min_y), round(min_y + height)),
+    )
 
-    return height_map
+    return height_map, coords

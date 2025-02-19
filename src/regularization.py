@@ -197,9 +197,46 @@ def create_grid_cells(
     
     return cells
 
+
+def rect_grid_cells(
+    intersections,
+    h_lines,
+    v_lines,
+) -> List[Polygon]:
+    # Создаем мини-полигоны (прямоугольники)
+    mini_polygons: list = []
+    num_rows = len(h_lines) - 1  # Количество строк
+    num_cols = len(v_lines) - 1  # Количество столбцов
+
+    # Создаем полигоны
+    for i in range(num_rows):
+        for j in range(num_cols):
+            # Индексы точек для текущего прямоугольника
+            idx1 = i * (num_cols + 1) + j
+            idx2 = i * (num_cols + 1) + j + 1
+            idx3 = (i + 1) * (num_cols + 1) + j + 1
+            idx4 = (i + 1) * (num_cols + 1) + j
+
+            # Проверяем, что индексы не выходят за пределы массива
+            if idx4 >= len(intersections):
+                continue  # Пропускаем, если индекс выходит за пределы
+
+            # Получаем точки
+            p1 = intersections[idx1]
+            p2 = intersections[idx2]
+            p3 = intersections[idx3]
+            p4 = intersections[idx4]
+
+            # Создаем полигон из четырех точек
+            polygon = Polygon([p1, p2, p3, p4])
+            mini_polygons.append(polygon)
+    return mini_polygons
+
+
 def fill_grid_cells(
     polygon: Polygon,
     grid_cells: List[Polygon],
+    coef: float = 0.01,
 ) -> List[Polygon]:
     """
     Заполняет ячейки сетки, если площадь пересечения с полигоном больше половины площади ячейки.
@@ -215,7 +252,7 @@ def fill_grid_cells(
         intersection_area = intersection.area
         cell_area = grid_cells[0].area
         
-        if intersection_area > cell_area * 0.0001:
+        if intersection_area > cell_area * coef:
             filled_cells.append(cell)
     
     return filled_cells
