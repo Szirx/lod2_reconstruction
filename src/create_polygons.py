@@ -4,6 +4,7 @@ from typing import List, Dict, Tuple
 from src.approximate import douglas_peucker
 from skimage.morphology import remove_small_objects
 import numpy as np
+import math
 from scipy.ndimage import binary_closing
 
 def check_close_contour(contour: List[List[float]]) -> bool:
@@ -79,8 +80,7 @@ def smoothed_mask(
         np.ndarray: Сглаженная инстанс маска 
     """
     matrix_cleaned: np.ndarray = remove_small_objects(
-        instance_mask.astype(np.uint8
-),
+        instance_mask.astype(np.uint8),
         min_size=min_size_objects,
     ).astype(int)
 
@@ -177,6 +177,8 @@ def create_height_map(
 
     return height_map
 
+def round_coord(coord: float) -> int:
+    return int(coord) + 1 if coord - int(coord) > 0.5 else int(coord)
 
 def create_surface_map(
     polygons_by_idx: Dict[np.uint8, List[Polygon]],
@@ -209,10 +211,8 @@ def create_surface_map(
 
     # Заполнение карты высот
     for idx, polygon in polygons_by_idx.items():
-        if polygon.is_empty:
+        if polygon.is_empty or polygon.area < area_threshold:
             continue
-        if polygon.area < area_threshold:
-            continue  # Пропускаем слишком маленькие полигоны
         # Получение индексов точек внутри полигона
         min_row = int((polygon.bounds[1] - min_y) / resolution)
         max_row = int((polygon.bounds[3] - min_y) / resolution)
@@ -228,8 +228,8 @@ def create_surface_map(
                     height_map[row, col] = idx
     
     coords = (
-        slice(round(min_x), round(min_x + width)),
-        slice(round(min_y), round(min_y + height)),
+        slice(round_coord(min_x), round_coord(min_x + width)),
+        slice(round_coord(min_y), round_coord(min_y + height)),
     )
 
     return height_map, coords

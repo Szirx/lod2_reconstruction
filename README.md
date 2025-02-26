@@ -9,3 +9,8 @@
 * *[Simplification and Regularization Algorithm for Right-Angled Polygon Building Outlines with Jagged Edges](https://www.mdpi.com/2220-9964/12/12/469)*
 
 ![Visualisation of process LoD-2 reconstruction](/images/photo_2024-12-17_13-49-31.jpg)
+
+
+#### Текущая версия пайплайна:
+
+![Алгоритм](/images/reconstruction.drawio.png)

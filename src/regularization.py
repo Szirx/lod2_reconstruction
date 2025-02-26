@@ -1,6 +1,8 @@
 from typing import List, Dict, Tuple
 import numpy as np
 from shapely import unary_union
+from scipy.ndimage import label
+from skimage.measure import find_contours
 from shapely.geometry import Polygon, box
 from shapely.geometry import LineString
 from sklearn.decomposition import PCA
@@ -218,9 +220,8 @@ def rect_grid_cells(
             idx4 = (i + 1) * (num_cols + 1) + j
 
             # Проверяем, что индексы не выходят за пределы массива
-            if idx4 >= len(intersections):
-                continue  # Пропускаем, если индекс выходит за пределы
-
+            if any(idx >= len(intersections) for idx in [idx1, idx2, idx3, idx4]):
+                continue
             # Получаем точки
             p1 = intersections[idx1]
             p2 = intersections[idx2]
@@ -248,18 +249,22 @@ def fill_grid_cells(
     filled_cells: list = []
 
     for cell in grid_cells:
+        if not cell.is_valid:
+            continue
+        
         intersection = polygon.intersection(cell)
         intersection_area = intersection.area
         cell_area = grid_cells[0].area
-        
+    
         if intersection_area > cell_area * coef:
             filled_cells.append(cell)
-    
+        
     return filled_cells
 
 
 def convert_to_rectangles(
-    contours_dict: Dict[np.uint8, List[Polygon]],
+    thin_edges: np.ndarray,
+    cell_area_threshold: float,
     resolution: float = 5.0,
 ) -> Dict[np.uint8, List[Polygon]]:
     """ Приведение полигонов к составной фигуре из прямоугольников
@@ -271,24 +276,36 @@ def convert_to_rectangles(
     Returns:
         Dict[np.uint8, List[Polygon]]: Преобразованный словарь с высотами и полигонами
     """
-    contours_dict_new: dict = {}
-    for key, values in contours_dict.items():
-        contours: list = []
-        for value in values:
-            building_polygon = Polygon(value)
+    surface_mask = label(~thin_edges[:,:])[0]
+    surface_mask[surface_mask == 0] = 1
 
-            # Минимальные и максимальные координаты bounding box
-            min_x, min_y, max_x, max_y = building_polygon.bounds
+    rng = np.unique(surface_mask)
 
-            # Создание сетки
-            grid_cells = create_grid_cells(min_x, min_y, max_x, max_y, resolution)
+    contour_samples: dict = {}
 
-            # Заполнение ячеек сетки
-            filled_cells = fill_grid_cells(building_polygon, grid_cells, resolution)
-            contours.append(unary_union(filled_cells))
-        contours_dict_new[key] = contours
+    for instance in rng[1:]:
+        contour_samples[int(instance)] = find_contours((surface_mask == instance))
+
+    r_contours: dict = {}
+    for k, list_polygons in contour_samples.items():
+        building_polygon = Polygon(list_polygons[0])
+
+        _, rect_coords = minimum_rectangle(building_polygon)
+
+        # Создание сетки внутри bounding box
+        h_l, v_l = create_grid_lines_from_rect(rect_coords, resolution)
+        # Коэффициент увеличения
+        scale_factor: float = 10
+        # Масштабируем линии
+        scaled_h_l = np.array([scale_line(line, scale_factor) for line in h_l])
+        scaled_v_l = np.array([scale_line(line, scale_factor) for line in v_l])
+
+        intersections = find_intersections(scaled_h_l, scaled_v_l)
+
+        minipolygons = rect_grid_cells(intersections, scaled_h_l, scaled_v_l)
+        r_contours[k] = unary_union(fill_grid_cells(building_polygon, minipolygons, coef=cell_area_threshold))
     
-    return contours_dict_new
+    return r_contours
 
 
 def minimum_rectangle(polygon: Polygon) -> Tuple[Polygon, list]:

@@ -5,7 +5,7 @@ from typing import Tuple, List, Any
 def detect_flat_surfaces(
     surface_matrix: np.ndarray,
     height_matrix: np.ndarray,
-    flatness_threshold: float = 3,
+    flatness_threshold: float = 3.0,
 ) -> Tuple[list]:
     """
     Определяет плоские и неровные поверхности по разбросу высот внутри каждой области.
