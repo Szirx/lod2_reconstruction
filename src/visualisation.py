@@ -151,33 +151,29 @@ def create_approximate_vis(
     plt.ylabel('Y')
 
 
-def vis_3d_house(height_map: np.ndarray, shape: Tuple[int] = (150, 150, 200)) -> None:
+def vis_3d_house(
+    height_map: np.ndarray,
+    shape: Tuple[int] = (150, 150, 200),
+) -> None:
+
     rows, cols = height_map.shape
 
     # Создаем координаты (x, y) для каждой точки
     x, y = np.meshgrid(np.arange(cols), np.arange(rows))
-    fig = plt.figure(figsize=(10, 8))
+    fig = plt.figure(figsize=(20, 20))
     ax = fig.add_subplot(projection='3d')
     ls = LightSource(azdeg=100, altdeg=45)
     cmap = plt.cm.viridis
     rgb = ls.shade(height_map, cmap=cmap, blend_mode='soft')
     # Построение поверхности
-    surf = ax.plot_surface(x, y, height_map, facecolors=rgb, rstride=1, cstride=1, antialiased=True)
-
-    # Добавление шкалы значений
-    cbar = fig.colorbar(surf, ax=ax, shrink=0.5, aspect=10)
-    cbar.set_label('Height')
+    surf = ax.plot_surface(x, y, height_map, facecolors=rgb, rstride=1, cstride=1, antialiased=True, alpha=0.7)
 
     # Настройка осей
     ax.grid(False)
-    ax.set_title("3D Surface Plot from Matrix")
-    ax.set_xlabel("Column Index")
-    ax.set_ylabel("Row Index")
-    ax.set_zlabel("Height")
     ax.set_xlim3d(0, shape[0])
     ax.set_ylim3d(0, shape[1])
     ax.set_zlim3d(0, shape[2])
-
+    ax.set_axis_off()
     plt.show()
 
 

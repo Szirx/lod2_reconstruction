@@ -5,3 +5,4 @@ __pycache__
 images/area*
 *.DS_Store
 vaihingen.pt
+info_objects.json

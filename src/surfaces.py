@@ -1,5 +1,6 @@
 import numpy as np
 from typing import Tuple, List, Any
+from shapely.geometry import Polygon
 
 
 def detect_flat_surfaces(
@@ -73,10 +74,49 @@ def masked_mean_by_surfaces(
     return surfaces_means
 
 
+def detect_right_vector(polygon: Polygon, non_rob_vector: np.ndarray) -> set:
+    # Вычисляем векторы сторон и их коэффициенты направления
+    vertices = list(polygon.exterior.coords)
+    direction_vectors = set()
+    for i in range(len(vertices) - 1):
+        # Текущая и следующая вершины
+        start = vertices[i]
+        end = vertices[i + 1]
+        
+        # Вектор стороны
+        vector = np.array(end) - np.array(start)
+        
+        # Нормализация вектора (коэффициенты направления)
+        norm = np.linalg.norm(vector)
+        if norm != 0:  # Избегаем деления на ноль
+            direction_vector = vector / norm
+        else:
+            direction_vector = vector  # Если длина вектора 0, оставляем как есть
+        direction_vector = tuple(direction_vector.astype(np.float16))
+        if direction_vector not in direction_vectors:
+            direction_vectors.add(direction_vector)
+    
+    angles = []
+    for direction_vector in direction_vectors:
+        # Скалярное произведение
+        dot_product = np.dot(non_rob_vector, direction_vector)
+        # Угол в радианах
+        angle = np.arccos(np.clip(dot_product, -1.0, 1.0))  # Ограничиваем значение для арккосинуса
+        angles.append(angle)
+
+    # Находим индекс ближайшего вектора
+    closest_index = np.argmin(angles)
+    direction_vectors = list(direction_vectors)
+    closest_vector = direction_vectors[closest_index]
+
+    return closest_vector
+
+
 def compute_robust_linear_gradient(
     surface_matrix: np.ndarray,
     height_matrix: np.ndarray,
     rough_surfaces: List[int],
+    r_contours: List[Polygon],
 ) -> np.ndarray:
     """
     Создает линейный градиент внутри каждой области, используя метод наименьших квадратов 
@@ -108,6 +148,8 @@ def compute_robust_linear_gradient(
         A = np.c_[X[:, 0], X[:, 1], np.ones(X.shape[0])]
         coeffs, _, _, _ = np.linalg.lstsq(A, heights, rcond=None)  # [a, b, c] -> плоскость z = ax + by + c
 
+        coeffs = tuple([coeffs[0], coeffs[1]])
+        # coeffs = detect_right_vector(r_contours[surface_id], coeffs)
         # Вычисляем значения градиента в направлении [grad_x, grad_y]
         for (x, y) in indices:
             gradient_matrix[x, y] = coeffs[0] * (x - centroid[0]) + coeffs[1] * (y - centroid[1]) + np.mean(heights)

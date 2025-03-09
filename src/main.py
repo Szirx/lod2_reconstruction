@@ -1,6 +1,7 @@
-from typing import Tuple
+from typing import Tuple, List
 import numpy as np
 from src.create_polygons import create_surface_map
+from shapely.geometry import Polygon
 from src.regularization import convert_to_rectangles
 from src.modified_contours import (
     apply_canny_to_mask,
@@ -18,7 +19,6 @@ from src.coordinates import (
     crop_patches,
 )
 
-
 def create_single_object(
     img_array: np.ndarray,
     heatmap_array: np.ndarray,
@@ -28,7 +28,7 @@ def create_single_object(
     flatness_threshold: float = 0.0,
     cell_area_threshold: float = 0.0,
     polygon_area_threshold: float = 0.0,
-    ) -> Tuple[Tuple[slice], np.ndarray]:
+    ) -> Tuple[Tuple[slice], np.ndarray, dict]:
 
     cropped_image, cropped_heatmap, cropped_mask = crop_patches(
         img_array, heatmap_array, instance_mask, crop_slice,
@@ -51,17 +51,55 @@ def create_single_object(
 
         surfaces_map, height_map = mapp.T, cropped_heatmap[coords]
 
-        flat_surfaces, rough_surfaces = detect_flat_surfaces(surfaces_map, height_map, flatness_threshold=flatness_threshold)
+        flat_surfaces, rough_surfaces = detect_flat_surfaces(surfaces_map, height_map, flatness_threshold)
         surfaces_mean = masked_mean_by_surfaces(surfaces_map, height_map, flat_surfaces)
-        gradient_height = compute_robust_linear_gradient(surfaces_map, height_map, rough_surfaces)
+        gradient_height = compute_robust_linear_gradient(surfaces_map, height_map, rough_surfaces, r_contours)
         gradient_matrix = apply_flat_surface_heights(surfaces_map, gradient_height, surfaces_mean)
 
-        return replaced_crop, gradient_matrix.T
+        right_contours: dict = {}
+
+        for k, v in r_contours.items():
+            right_contours[k] = Polygon([(x - coords[0].start,y - coords[1].start) for (x, y) in list(v.exterior.coords)])
+
+        info_dict_single_object: dict = {}
+
+        threshold: int = 7
+        for index, polygon in right_contours.items():
+            replaced_polygon: List[Tuple[float, float]] = [
+                (x + replaced_crop[0].start, y + replaced_crop[1].start)
+                for (x, y) in list(polygon.exterior.coords)
+            ]
+            if index in rough_surfaces:
+                
+                heights: list = []
+                
+                for (x, y) in list(polygon.exterior.coords):
+                    x_start = max(int(x) - threshold, 0)
+                    x_end = min(int(x) + threshold, gradient_matrix.shape[0])
+                    y_start = max(int(y) - threshold, 0)
+                    y_end = min(int(y) + threshold, gradient_matrix.shape[1])
+                    slice_heights = gradient_matrix[
+                                x_start: x_end,
+                                y_start: y_end,
+                            ].T
+                    heights.append(np.max(slice_heights))
+            
+            if Polygon(replaced_polygon).exterior.is_ccw:
+                replaced_polygon = replaced_polygon[::-1]
+                heights = heights[::-1]
+
+            info_dict_single_object[index] = {
+                'polygon': replaced_polygon,
+                'is_flat': True if index in flat_surfaces else False,
+                'mean_height': surfaces_mean[index] if index in flat_surfaces else None,
+                'heights': heights if index in rough_surfaces else None,
+            }
+
+        return replaced_crop, gradient_matrix.T, info_dict_single_object
     else:
-        return None, None
+        return None, None, None
 
 if __name__ == '__main__':
     weights_path: str = '../../../shared_data/users/avlasov/vaihingen.pt'
     vai: str = '../../shared_data/datasets/Vaihingen/train/NDSM/area34.tif'
     vai_rgb: str = '../../shared_data/datasets/Vaihingen/train/RGB/area34.tif'
-    replaced_crop, surfaces_matrix = create_single_object(vai_rgb, vai, weights_path, 0)
