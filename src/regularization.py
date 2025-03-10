@@ -48,7 +48,7 @@ def oriented_bounding_box(polygon: Polygon) -> np.ndarray:
 def snap_to_grid(polygon: Polygon, resolution: float):
     """
     Приводит полигон к ближайшему прямоугольному виду по сетке с разрешением resolution.
-    
+
     :param polygon: Shapely Polygon
     :param resolution: Разрешение сетки
     :return: Новый полигон, выровненный по сетке
@@ -61,10 +61,8 @@ def snap_to_grid(polygon: Polygon, resolution: float):
 
     # Подгонка точек прямоугольника к сетке
     snapped_coords = np.round(rect_coords / resolution) * resolution
-
-    # Создание нового полигона с выровненными координатами
     snapped_polygon = Polygon(snapped_coords)
-    
+
     return snapped_polygon, np.array(snapped_coords[:-1]), min_rect,
 
 
@@ -76,7 +74,7 @@ def create_grid_lines(
 ) -> Tuple[np.ndarray, np.ndarray]:
     """
     Создает линии сетки внутри повернутого bounding box.
-    
+
     :param min_point: Минимальные координаты (min_x, min_y) повернутого bounding box
     :param max_point: Максимальные координаты (max_x, max_y) повернутого bounding box
     :param rotation_matrix: Матрица поворота bounding box
@@ -119,7 +117,7 @@ def scale_line(
 ) -> np.ndarray:
     """
     Увеличивает длину отрезка на заданный коэффициент.
-    
+
     :param line: numpy массив с координатами концов линии [[x1, y1], [x2, y2]]
     :param scale_factor: Коэффициент увеличения длины
     :return: Масштабированная линия
@@ -140,7 +138,19 @@ def scale_line(
 
 
 # Функция для нахождения пересечений отрезков
-def find_intersections(h_lines, v_lines):
+def find_intersections(
+    h_lines: np.ndarray,
+    v_lines: np.ndarray,
+) -> np.ndarray:
+    """ Нахождение точек пересечения построенной сетки
+
+    Args:
+        h_lines (np.ndarray): Вертикальные линии сетки
+        v_lines (np.ndarray): Горизонтальные ветки сетки
+
+    Returns:
+        np.ndarray: Полученные точки пересечений сетки
+    """
     intersections = []  # Список для хранения пересечений
 
     for h_line in h_lines:
@@ -157,7 +167,7 @@ def find_intersections(h_lines, v_lines):
                 # В зависимости от типа пересечения (точка или отрезок) мы извлекаем только точку
                 if intersection.geom_type == 'Point':
                     intersections.append([intersection.x, intersection.y])
-    
+
     return np.array(intersections)
 
 
@@ -180,7 +190,7 @@ def create_grid_cells(
 ) -> List[box]:
     """
     Создает сетку в виде прямоугольных ячеек внутри указанного диапазона.
-    
+
     :param polygon: Полигон отдельной части объекта
     :param resolution: Размер ячеек сетки
     :return: Список прямоугольных ячеек (rectangles)
@@ -188,15 +198,15 @@ def create_grid_cells(
     min_x, min_y, max_x, max_y = polygon.bounds
 
     cells: list = []
-    
+
     x_coords = np.arange(min_x, max_x, resolution)
     y_coords = np.arange(min_y, max_y, resolution)
-    
+
     for x in x_coords:
         for y in y_coords:
             cell = box(x, y, x + resolution, y + resolution)
             cells.append(cell)
-    
+
     return cells
 
 
@@ -220,7 +230,9 @@ def rect_grid_cells(
             idx4 = (i + 1) * (num_cols + 1) + j
 
             # Проверяем, что индексы не выходят за пределы массива
-            if any(idx >= len(intersections) for idx in [idx1, idx2, idx3, idx4]):
+            if any(
+                idx >= len(intersections) for idx in (idx1, idx2, idx3, idx4)
+            ):
                 continue
             # Получаем точки
             p1 = intersections[idx1]
@@ -241,7 +253,7 @@ def fill_grid_cells(
 ) -> List[Polygon]:
     """
     Заполняет ячейки сетки, если площадь пересечения с полигоном больше половины площади ячейки.
-    
+
     :param polygon: Shapely Polygon — исходный полигон
     :param grid_cells: Список прямоугольных ячеек (shapely.geometry.Polygon)
     :return: Список заполненных ячеек
@@ -251,14 +263,14 @@ def fill_grid_cells(
     for cell in grid_cells:
         if not cell.is_valid:
             continue
-        
+
         intersection = polygon.intersection(cell)
         intersection_area = intersection.area
         cell_area = grid_cells[0].area
-    
+
         if intersection_area > cell_area * coef:
             filled_cells.append(cell)
-        
+
     return filled_cells
 
 
@@ -276,7 +288,7 @@ def convert_to_rectangles(
     Returns:
         Dict[np.uint8, List[Polygon]]: Преобразованный словарь с высотами и полигонами
     """
-    surface_mask = label(~thin_edges[:,:])[0]
+    surface_mask = label(~thin_edges[:, :])[0]
     surface_mask[surface_mask == 0] = 1
 
     rng = np.unique(surface_mask)
@@ -304,25 +316,29 @@ def convert_to_rectangles(
 
         minipolygons = rect_grid_cells(intersections, scaled_h_l, scaled_v_l)
         r_contours[k] = unary_union(fill_grid_cells(building_polygon, minipolygons, coef=cell_area_threshold))
-    
+
     return r_contours
 
 
 def minimum_rectangle(polygon: Polygon) -> Tuple[Polygon, list]:
     """
     Приводит полигон к ближайшему прямоугольному виду по сетке с разрешением resolution.
-    
+
     :param polygon: Shapely Polygon
     :return: Новый полигон, выровненный по сетке
     """
     min_rect = polygon.minimum_rotated_rectangle
-    
+
     return min_rect, np.array(min_rect.exterior.coords)
 
-def create_grid_lines_from_rect(rect_coords: np.ndarray, resolution: float):
+
+def create_grid_lines_from_rect(
+    rect_coords: np.ndarray,
+    resolution: float,
+) -> Tuple[np.ndarray]:
     """
     Создает линии сетки внутри повернутого bounding box без матрицы поворота.
-    
+
     :param min_rect: Shapely Polygon — минимальный охватывающий прямоугольник
     :param rect_coords: Координаты углов прямоугольника (4x2 массив)
     :param resolution: Разрешение сетки
@@ -332,32 +348,36 @@ def create_grid_lines_from_rect(rect_coords: np.ndarray, resolution: float):
     vec1 = rect_coords[1] - rect_coords[0]  # Первый вектор (длина)
     vec2 = rect_coords[3] - rect_coords[0]  # Второй вектор (ширина)
 
+    # Определяем размеры bounding box
+    length = np.linalg.norm(vec1)
+    width = np.linalg.norm(vec2)
+
     # Нормализуем вектора
     vec1 /= np.linalg.norm(vec1)
     vec2 /= np.linalg.norm(vec2)
 
-    # Определяем размеры bounding box
-    length = np.linalg.norm(rect_coords[1] - rect_coords[0])
-    width = np.linalg.norm(rect_coords[3] - rect_coords[0])
-
     # Генерируем координаты сетки вдоль первой и второй оси
-    num_steps_1 = int(np.ceil(length / resolution)) + 1
-    num_steps_2 = int(np.ceil(width / resolution)) + 1
+    num_steps_first = int(np.ceil(length / resolution)) + 1
+    num_steps_second = int(np.ceil(width / resolution)) + 1
 
     # Генерация точек вдоль первой оси
-    line1_points = [rect_coords[0] + vec1 * i * resolution for i in range(num_steps_1)]
-    line2_points = [rect_coords[0] + vec2 * i * resolution for i in range(num_steps_2)]
+    line1_points = [
+        rect_coords[0] + vec1 * i * resolution for i in range(num_steps_first)
+    ]
+    line2_points = [
+        rect_coords[0] + vec2 * i * resolution for i in range(num_steps_second)
+    ]
 
     # Генерация горизонтальных линий
     h_lines = []
     for p in line2_points:
-        line = [p + vec1 * 0, p + vec1 * length]  # Линия вдоль vec1
+        line = [p, p + vec1 * length]  # Линия вдоль vec1
         h_lines.append(line)
 
     # Генерация вертикальных линий
     v_lines = []
     for p in line1_points:
-        line = [p + vec2 * 0, p + vec2 * width]  # Линия вдоль vec2
+        line = [p, p + vec2 * width]  # Линия вдоль vec2
         v_lines.append(line)
 
     return np.array(h_lines), np.array(v_lines)

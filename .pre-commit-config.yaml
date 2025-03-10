@@ -1,0 +1,16 @@
+repos:
+  - repo: https://github.com/pycqa/flake8
+    rev: '7.1.2'
+    hooks:
+      - id: flake8
+        additional_dependencies: [flake8]
+        files: ^src/
+
+  - repo: local
+    hooks:
+      - id: pytest
+        name: pytest
+        entry: pytest
+        language: system
+        always_run: true
+        pass_filenames: false

@@ -12,12 +12,15 @@ def dist_point_line_segment(
     x1, y1 = line_segment[0]
     x2, y2 = line_segment[1]
 
+    degree: float = 0.5
     double_area = abs((y2 - y1) * x - (x2 - x1) * y + x2 * y1 - y2 * x1)
-    line_segment_length = ((x2 - x1) ** 2 + (y2 - y1) ** 2) ** 0.5
-    if line_segment_length != 0.0:
-        return double_area / line_segment_length
+    line_segment_length = (
+        (x2 - x1) ** 2 + (y2 - y1) ** 2
+    ) ** degree
+    if line_segment_length == 0:
+        return 0
     else:
-        return 0.0
+        return double_area / line_segment_length
 
 
 def simplify_points(
@@ -63,7 +66,7 @@ def douglas_peucker(
     return dest_points
 
 
-def poly_adjustment(instances_dict, epsilon_smooth = None):
+def poly_adjustment(instances_dict, epsilon_smooth=None):
     complete_list = []
     for class_id, prediction_data in instances_dict.items():
         if not Polygon(prediction_data[0]).exterior.is_ccw:

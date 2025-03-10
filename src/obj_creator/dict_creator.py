@@ -29,41 +29,45 @@ def create_image_dict(height_map: np.ndarray, pixel_multipolygons: list, resolut
               а значениями - словари с полями 'contours', 'height', 'height_meters' и 'category'.
     """
 
-    contours_with_height = {}  
-    h, w = height_map.shape  
-    
+    contours_with_height = {}
+    h, _ = height_map.shape
+
     for i, (contour, category) in enumerate(pixel_multipolygons):
         if len(contour) < 3:
             continue
-        
+
         polygon = Polygon(contour)
-        
-        # Получаем границы полигона
-        minx, miny, maxx, maxy = polygon.bounds
-        minx, miny, maxx, maxy = int(minx), int(miny), int(maxx), int(maxy)
-        
+        minx, miny, maxx, maxy = map(int, polygon.bounds)
+
         # Обрезаем карту высот по границам полигона
-        cropped_height_map = height_map[miny:maxy + 1, minx:maxx + 1]
-        
+        cropped_height_map = height_map[
+            miny:maxy + 1,
+            minx:maxx + 1,
+        ]
+
         # Корректируем координаты контура
         adjusted_contour = [(x - minx, y - miny) for x, y in contour]
         adjusted_polygon = Polygon(adjusted_contour)
-        
+
         # Создаем сетку координат для обрезанной карты высот
         y, x = np.indices(cropped_height_map.shape)
         coords = np.c_[x.ravel(), y.ravel()]
-        
+
         # Создаем маску, которая показывает, какие пиксели находятся внутри полигона
-        mask = contains(adjusted_polygon, coords[:, 0], coords[:, 1]).reshape(cropped_height_map.shape)
-        
-        if not np.any(mask):
-            warnings.warn(f'Warning: Polygon {i} does not contain any pixels in the height map.')
-            building_height_mean_meters = 10 
-        else:
+        mask = contains(
+            adjusted_polygon,
+            coords[:, 0],
+            coords[:, 1],
+        ).reshape(cropped_height_map.shape)
+
+        if np.any(mask):
             building_height_mean_meters = np.mean(cropped_height_map[mask])
-        
+        else:
+            warnings.warn(f'Warning: Polygon {i} does not contain any pixels in the height map.')
+            building_height_mean_meters = 10
+
         building_height_mean_obj = building_height_mean_meters / resolution
-        
+
         new_contour = [[point[0], h - point[1]] for point in contour]
         contours_with_height[i] = {
             'contours': new_contour,
@@ -71,8 +75,8 @@ def create_image_dict(height_map: np.ndarray, pixel_multipolygons: list, resolut
             'height_meters': building_height_mean_meters,
             'category': category,
         }
-    
-    return contours_with_height  
+
+    return contours_with_height
 
 
 def create_dict_single_obj(
@@ -88,7 +92,9 @@ def create_dict_single_obj(
     right_contours: dict = {}
 
     for k, v in rectangle_contours.items():
-        right_contours[k] = Polygon([(x - coords[0].start,y - coords[1].start) for (x, y) in list(v.exterior.coords)])
+        right_contours[k] = Polygon(
+            [(x - coords[0].start, y - coords[1].start) for (x, y) in list(v.exterior.coords)]
+        )
 
     info_dict_single_object: dict = {}
     rough_surfaces_iter: int = 0
@@ -101,16 +107,15 @@ def create_dict_single_obj(
         heights: list = []
 
         if index in rough_surfaces:
-            
-            
             for (x, y) in list(polygon.exterior.coords):
-                heights.append(gradient_matrices[rough_surfaces_iter][
+                heights.append(
+                    gradient_matrices[rough_surfaces_iter][
                         min(int(x), gradient_matrices[rough_surfaces_iter].shape[0] - 1),
                         min(int(y), gradient_matrices[rough_surfaces_iter].shape[1] - 1),
                     ],
                 )
             rough_surfaces_iter += 1
-        
+
         if Polygon(replaced_polygon).exterior.is_ccw:
             replaced_polygon = replaced_polygon[::-1]
             heights = heights[::-1]
@@ -121,5 +126,5 @@ def create_dict_single_obj(
             'mean_height': surfaces_mean[index] if index in flat_surfaces else None,
             'heights': heights if index in rough_surfaces else None,
         }
-    
+
     return info_dict_single_object

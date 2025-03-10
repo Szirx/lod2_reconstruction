@@ -1,19 +1,19 @@
 import numpy as np
-from typing import Tuple, List, Any
+from typing import Tuple, List
 from shapely.geometry import Polygon
 
 
 def detect_flat_surfaces(
     surface_matrix: np.ndarray,
     height_matrix: np.ndarray,
-    flatness_threshold: float = 3.0,
+    flatness_thd: float = 3.0,
 ) -> Tuple[list]:
     """
     Определяет плоские и неровные поверхности по разбросу высот внутри каждой области.
 
     :param surface_matrix: 2D numpy массив, где указаны номера областей
     :param height_matrix: 2D numpy массив, где указаны значения высот
-    :param flatness_threshold: Порог отклонения, ниже которого поверхность считается плоской
+    :param flatness_thd: Порог отклонения, ниже которого поверхность считается плоской
     :return: Список номеров плоских и неровных поверхностей
     """
     unique_surfaces = np.unique(surface_matrix)
@@ -27,10 +27,7 @@ def detect_flat_surfaces(
         if heights.size == 0:
             continue
 
-        # Вычисление статистик высоты
-        min_height = np.min(heights)
-        max_height = np.max(heights)
-        height_range = max_height - min_height  # Размах высот
+        height_range = np.max(heights) - np.min(heights)  # Размах высот
         std_dev = np.std(heights)  # Стандартное отклонение
         median_height = np.median(heights)
 
@@ -39,7 +36,7 @@ def detect_flat_surfaces(
         iqr = q3 - q1
 
         # Определение "плоскости" по стандартному отклонению и IQR
-        if height_range < flatness_threshold * median_height and std_dev < flatness_threshold and iqr < flatness_threshold:
+        if height_range < flatness_thd * median_height and std_dev < flatness_thd and iqr < flatness_thd:
             flat_surfaces.append(int(surface_id.item()))
         else:
             rough_surfaces.append(int(surface_id.item()))
@@ -51,7 +48,8 @@ def masked_mean_by_surfaces(
     surfaces_matrix: np.ndarray,
     value_matrix: np.ndarray,
     flat_surfaces: List[int],
-    min_value: float = 0.0):
+    min_value: float = 0,
+) -> dict:
     """
     Вычисляет среднее значение в каждой области surface_matrix, исключая элементы value_matrix < min_value.
 
@@ -64,10 +62,10 @@ def masked_mean_by_surfaces(
 
     for surface in flat_surfaces:
         mask = (surfaces_matrix == surface) & (value_matrix >= min_value)  # Учитываем только >= min_value
-        values = value_matrix[mask]
+        masked_values = value_matrix[mask]
 
-        if len(values) > 0:
-            surfaces_means[surface] = int(np.mean(values))
+        if len(masked_values) > 0:
+            surfaces_means[surface] = int(np.mean(masked_values))
         else:
             surfaces_means[surface] = np.nan  # Если нет подходящих значений, ставим NaN
 
@@ -75,6 +73,15 @@ def masked_mean_by_surfaces(
 
 
 def detect_right_vector(polygon: Polygon, non_rob_vector: np.ndarray) -> set:
+    """ Определение направление вектора градиента вдоль какой либо оси плоскости
+
+    Args:
+        polygon (Polygon): Полигон плоскости
+        non_rob_vector (np.ndarray): Исходный вектор направления градиента
+
+    Returns:
+        set: Обновленный вектор градиента
+    """
     # Вычисляем векторы сторон и их коэффициенты направления
     vertices = list(polygon.exterior.coords)
     direction_vectors = set()
@@ -82,20 +89,20 @@ def detect_right_vector(polygon: Polygon, non_rob_vector: np.ndarray) -> set:
         # Текущая и следующая вершины
         start = vertices[i]
         end = vertices[i + 1]
-        
+
         # Вектор стороны
         vector = np.array(end) - np.array(start)
-        
+
         # Нормализация вектора (коэффициенты направления)
         norm = np.linalg.norm(vector)
-        if norm != 0:  # Избегаем деления на ноль
-            direction_vector = vector / norm
-        else:
+        if norm == 0:  # Избегаем деления на ноль
             direction_vector = vector  # Если длина вектора 0, оставляем как есть
+        else:
+            direction_vector = vector / norm
         direction_vector = tuple(direction_vector.astype(np.float16))
         if direction_vector not in direction_vectors:
             direction_vectors.add(direction_vector)
-    
+
     angles = []
     for direction_vector in direction_vectors:
         # Скалярное произведение
@@ -112,14 +119,13 @@ def detect_right_vector(polygon: Polygon, non_rob_vector: np.ndarray) -> set:
     return closest_vector
 
 
-
 def compute_robust_linear_gradient(
     surface_matrix: np.ndarray,
     height_matrix: np.ndarray,
     rough_surfaces: List[int],
 ) -> Tuple[np.ndarray, List[np.ndarray]]:
     """
-    Создает линейный градиент внутри каждой области, используя метод наименьших квадратов 
+    Создает линейный градиент внутри каждой области, используя метод наименьших квадратов
     для нахождения направления наибольшего изменения высот.
 
     :param surface_matrix: 2D numpy массив, где указаны номера областей
@@ -133,7 +139,7 @@ def compute_robust_linear_gradient(
     for surface_id in rough_surfaces:
         if surface_id == 0:  # Пропускаем фон, если он есть
             continue
-        
+
         # Маска текущей области
         mask = (surface_matrix == surface_id)
         indices = np.argwhere(mask)
@@ -147,16 +153,22 @@ def compute_robust_linear_gradient(
 
         # Решаем уравнение Ax = b с помощью линейной регрессии
         # A = [x y], b = heights
-        A = np.c_[X[:, 0], X[:, 1], np.ones(X.shape[0])]
+        A = np.c_[
+            X[:, 0],
+            X[:, 1],
+            np.ones(X.shape[0]),
+        ]
         coeffs, _, _, _ = np.linalg.lstsq(A, heights, rcond=None)  # [a, b, c] -> плоскость z = ax + by + c
 
         # Создаем матрицу градиента для текущей области
         gradient_matrix_surface = np.zeros_like(height_matrix, dtype=np.float32)
-        
+
         # Вычисляем значения градиента для всей области
         for x in range(height_matrix.shape[0]):
             for y in range(height_matrix.shape[1]):
-                gradient_matrix_surface[x, y] = coeffs[0] * (x - centroid[0]) + coeffs[1] * (y - centroid[1]) + np.mean(heights)
+                gradient_matrix_surface[x, y] = coeffs[0] * \
+                    (x - centroid[0]) + coeffs[1] * \
+                    (y - centroid[1]) + np.mean(heights)
 
         # Добавляем матрицу градиента для текущей области в список
         gradient_matrices.append(gradient_matrix_surface)
@@ -167,7 +179,11 @@ def compute_robust_linear_gradient(
     return gradient_matrix, gradient_matrices
 
 
-def apply_flat_surface_heights(surface_matrix, gradient_matrix, flat_surface_heights):
+def apply_flat_surface_heights(
+    surface_matrix: np.ndarray,
+    gradient_matrix: np.ndarray,
+    flat_surface_heights: dict,
+) -> np.ndarray:
     """
     Заменяет высоты в градиентной матрице фиксированными значениями для плоских поверхностей.
 
@@ -176,10 +192,10 @@ def apply_flat_surface_heights(surface_matrix, gradient_matrix, flat_surface_hei
     :param flat_surface_heights: словарь {номер поверхности: фиксированная высота}
     :return: Обновленная градиентная матрица
     """
-    result = gradient_matrix.copy()
+    result_gm = gradient_matrix.copy()
 
     for surface_id, height in flat_surface_heights.items():
         mask = (surface_matrix == surface_id)
-        result[mask] = height  # Заменяем все пиксели данной области на высоту из словаря
+        result_gm[mask] = height
 
-    return result
+    return result_gm

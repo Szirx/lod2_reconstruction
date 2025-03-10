@@ -1,3 +1,4 @@
+from typing import List, Tuple
 from shapely import Polygon
 
 
@@ -8,12 +9,30 @@ def is_ear(p1, p2, p3, polygon):
     :param polygon: Полигон.
     :return: True, если треугольник является "ухом".
     """
-    # Проверка, что треугольник не содержит других точек полигона
     for point in polygon:
         if point not in (p1, p2, p3):
             if point_in_triangle(point, p1, p2, p3):
                 return False
     return True
+
+
+def cross_product(a: float, b: float) -> float:
+    return a[0] * b[1] - a[1] * b[0]
+
+
+def area(a: float, b: float, c: float) -> float:
+    return abs(
+        cross_product(
+            (
+                b[0] - a[0],
+                b[1] - a[1],
+            ),
+            (
+                c[0] - a[0],
+                c[1] - a[1],
+            ),
+        ) / 2
+    )
 
 
 def point_in_triangle(p, p1, p2, p3):
@@ -23,91 +42,98 @@ def point_in_triangle(p, p1, p2, p3):
     :param p1, p2, p3: Точки треугольника.
     :return: True, если точка внутри треугольника.
     """
-    def cross_product(a, b):
-        return a[0] * b[1] - a[1] * b[0]
-
-    def area(a, b, c):
-        return abs(cross_product((b[0] - a[0], b[1] - a[1]), (c[0] - a[0], c[1] - a[1])) / 2)
+    epsilon: float = 1e-6
 
     area_total = area(p1, p2, p3)
     area1 = area(p, p1, p2)
     area2 = area(p, p2, p3)
     area3 = area(p, p3, p1)
 
-    return abs((area1 + area2 + area3) - area_total) < 1e-6
+    return abs((area1 + area2 + area3) - area_total) < epsilon
 
-def triangulate_polygon(polygon):
 
+def triangulate_polygon(polygon: List[Tuple[float]]) -> list:
     """Improved polygon triangulation to prevent infinite loops."""
-    if len(polygon) < 3:
+    len_polygon: int = len(polygon)
+    if len_polygon < 3:
         return []
-    
+
     triangles = []
     polygon = list(polygon)
     attempts = 0
 
-    while len(polygon) > 3:
+    while len_polygon > 3:
         ear_found = False
-        for i in range(len(polygon)):
+        for i in range(len_polygon):
             p1 = polygon[i]
-            p2 = polygon[(i + 1) % len(polygon)]
-            p3 = polygon[(i + 2) % len(polygon)]
+            p2 = polygon[(i + 1) % len_polygon]
+            p3 = polygon[(i + 2) % len_polygon]
 
             if is_ear(p1, p2, p3, polygon):
                 triangles.append((p1, p2, p3))
-                polygon.pop((i + 1) % len(polygon))
+                polygon.pop((i + 1) % len_polygon)
+                len_polygon = len(polygon)
                 ear_found = True
                 break
-        
+
         if not ear_found:
             attempts += 1
-            if attempts > len(polygon) * 2:  # Fail-safe to prevent infinite loops
-                print(f"Failed to triangulate. Possible complex polygon or algorithm limitation. {polygon}")
+            if attempts > len_polygon * 2:  # Fail-safe to prevent infinite loops
                 return []
-    
+
     triangles.append(tuple(polygon))  # Append the remaining triangle
     return triangles
 
 
-def triangulate_polygon_with_heights(polygon):
+def triangulate_polygon_with_heights(polygon: List[Tuple[float]]) -> list:
     """
     Триангуляция полигона с учетом высот для создания скатной крыши.
     :param polygon: Список точек полигона в формате [(x1, y1, z1), (x2, y2, z2), ...].
     :return: Список треугольников в формате [(p1, p2, p3), ...].
     """
-    if len(polygon) < 3:
+    len_polygon: int = len(polygon)
+    if len_polygon < 3:
         return []
-    
+
     triangles = []
     polygon = list(polygon)
     attempts = 0
 
-    while len(polygon) > 3:
+    while len_polygon > 3:
         ear_found = False
-        for i in range(len(polygon)):
+        for i in range(len_polygon):
             p1 = polygon[i]
-            p2 = polygon[(i + 1) % len(polygon)]
-            p3 = polygon[(i + 2) % len(polygon)]
+            p2 = polygon[(i + 1) % len_polygon]
+            p3 = polygon[(i + 2) % len_polygon]
 
             if is_ear(p1, p2, p3, polygon):
                 triangles.append((p1, p2, p3))
-                polygon.pop((i + 1) % len(polygon))
+                polygon.pop((i + 1) % len_polygon)
+                len_polygon = len(polygon)
                 ear_found = True
                 break
-        
+
         if not ear_found:
             attempts += 1
-            if attempts > len(polygon) * 2:  # Защита от бесконечного цикла
-                print(f"Ошибка: невозможно триангулировать полигон. Возможно, полигон слишком сложный. {polygon}")
+            if attempts > len_polygon * 2:  # Защита от бесконечного цикла
                 return []
-    
+
     triangles.append(tuple(polygon))  # Добавляем последний треугольник
     return triangles
 
-def create_building_obj(i, obj_dict):
-    """Creates a 3D .obj representation of multiple buildings given a dictionary of building data."""
-    def add_building_to_obj(outline, heights: list | int, obj_str_list, start_vertex_index=1):
-        """Helper function to add a single building's data to a list of .obj strings."""
+
+def create_building_obj(
+    i: int,
+    obj_dict: dict,
+) -> str:
+    """Creates a 3D .obj representation of multiple buildings given a dictionary of building building_data."""
+    def add_building_to_obj(
+        outline: List[Tuple[int]],
+        heights: list | int,
+        obj_str_list: list,
+        start_vertex_index: int = 1,
+    ) -> None:
+        """Helper function to add a single building's building_data to a list of .obj strings."""
         # Create the 3D vertices
         vertices = []
         if isinstance(heights, int):
@@ -142,12 +168,12 @@ def create_building_obj(i, obj_dict):
         obj_str_list.append("vn 0 0 -1")
         obj_str_list.append("vn 0 0 1")
 
-
         # Side faces with appropriate normals
         for i in range(len(outline)):
             p1 = outline[i]
             p2 = outline[(i + 1) % len(outline)]
-            dx, dy = p2[0] - p1[0], p2[1] - p1[1]
+            dx = p2[0] - p1[0]
+            dy = p2[1] - p1[1]
             # Compute the normal vector (perpendicular to the edge)
             nx, ny = dy, -dx  # perpendicular vector
             magnitude = (nx ** 2 + ny ** 2) ** 0.5
@@ -155,7 +181,7 @@ def create_building_obj(i, obj_dict):
                 nx, ny = nx / magnitude, ny / magnitude
             else:
                 continue
-            cross_product = nx * 0 - ny * 0  # Simplified cross product with (0, 0, 1)
+            cross_product = nx  # Simplified cross product with (0, 0, 1)
             if cross_product < 0:
                 nx, ny = -nx, -ny  # Flip the normal if necessary
 
@@ -166,22 +192,28 @@ def create_building_obj(i, obj_dict):
             top_left = bottom_left + 1
             top_right = bottom_right + 1
             obj_str_list.append(
-                f"f {bottom_left}//{2 + i + 1} {bottom_right}//{2 + i + 1} {top_right}//{2 + i + 1} {top_left}//{2 + i + 1}")
+                f"f {bottom_left}//{2 + i + 1} "
+                f"{bottom_right}//{2 + i + 1} "
+                f"{top_right}//{2 + i + 1} "
+                f"{top_left}//{2 + i + 1}"
+            )
 
-    obj_str_list = []
-    vertex_count = 0
-    for building_id, data in obj_dict.items():
-        obj_str_list.append(f"o 0_{building_id}_{i}")  # Start a new object group здесь надо будет добавить еще номер поверхности (класс_номер_дома_номер_поверхности)
-        outline = data['polygon']
-        if data['heights'] is None:
-            height = data['mean_height']
+    obj_str_list: list = []
+    vertex_count: int = 0
+    for building_id, building_data in obj_dict.items():
+        obj_str_list.append(f"o 0_{building_id}_{i}")
+        outline = building_data['polygon']
+        if building_data['heights'] is None:
+            height = building_data['mean_height']
         else:
-            height = data['heights']
+            height = building_data['heights']
         if not Polygon(outline).is_valid:
             continue
         add_building_to_obj(outline, height, obj_str_list, start_vertex_index=vertex_count + 1)
         vertex_count += len(outline) * 2  # Each outline results in twice the number of 3D vertices
-    return "\n".join(obj_str_list) + '\n'
+
+    merged_obj_str_list: str = '\n'.join(obj_str_list)
+    return f'{merged_obj_str_list}\n'
 
 
 def merge_objs(info_objects: dict, output_file_path: str) -> None:
@@ -191,7 +223,7 @@ def merge_objs(info_objects: dict, output_file_path: str) -> None:
     texcoords: list = []
     faces: list = []
     vertex_offset: int = 0
-    
+
     for i, building in enumerate(info_objects['buildings']):
         if building is None:
             continue
@@ -205,9 +237,9 @@ def merge_objs(info_objects: dict, output_file_path: str) -> None:
                 texcoords.append(f'{line}\n')
             elif line.startswith('f '):  # грани (faces)
                 # Пересчитываем индексы вершин, нормалей и текстур
-                face_data = line.split()[1:]
+                face_building_data = line.split()[1:]
                 new_face = ['f']
-                for face in face_data:
+                for face in face_building_data:
                     parts = face.split('//')
                     if len(parts) == 2:  # формат v//vn
                         v, vn = parts

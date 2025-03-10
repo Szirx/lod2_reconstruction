@@ -1,14 +1,19 @@
-from shapely.geometry import Polygon, Point
-from skimage.measure import find_contours
 from typing import List, Dict, Tuple
-from src.approximate import douglas_peucker
-from skimage.morphology import remove_small_objects
 import numpy as np
-import math
+from shapely.geometry import Polygon, Point
 from scipy.ndimage import binary_closing
+from skimage.measure import find_contours
+from skimage.morphology import remove_small_objects
+from src.approximate import douglas_peucker
+
 
 def check_close_contour(contour: List[List[float]]) -> bool:
     return True if contour[0][0] == contour[-1][0] and contour[0][1] == contour[-1][1] else False
+
+
+def round_coord(coord: float) -> int:
+    threshold: float = 0.5
+    return int(coord) + 1 if coord - int(coord) > threshold else int(coord)
 
 
 def fix_and_simplification_contour(
@@ -26,7 +31,7 @@ def fix_and_simplification_contour(
     """
     if check_close_contour(contour):
         contour = contour[:-1]
-    
+
     return douglas_peucker(contour, tolerance=tolerance)
 
 
@@ -42,12 +47,12 @@ def create_polygons(
     Returns:
         Dict[np.uint8, List[Polygon]]: Словарь высота : набор полигонов поверхностей
     """
-    
+
     contours_dict: dict = {}
 
     for height, (mask, quantity) in instance_masks.items():
         contours: list = []
-        
+
         for instance in range(1, quantity + 1):
             contours_sample: List[np.ndarray | List[np.ndarray]] = find_contours(
                 (mask == instance).astype(np.int8),
@@ -69,15 +74,15 @@ def smoothed_mask(
     min_size_objects: int = 20,
     interations: int = 3,
 ) -> np.ndarray:
-    """ Сглаживание формы объектов на карте кластеризации 
+    """ Сглаживание формы объектов на карте кластеризации
 
     Args:
-        instance_mask (np.ndarray): 
+        instance_mask (np.ndarray):
         min_size_objects (int, optional): Минимальный размер возможных объектов. Defaults to 20.
         interations (int, optional): Количество итераций расширения и сжатия областей. Defaults to 3.
 
     Returns:
-        np.ndarray: Сглаженная инстанс маска 
+        np.ndarray: Сглаженная инстанс маска
     """
     matrix_cleaned: np.ndarray = remove_small_objects(
         instance_mask.astype(np.uint8),
@@ -91,12 +96,11 @@ def smoothed_mask(
     for label_value in unique_labels:
         if label_value == 0:
             continue
-        # Обрабатываем каждую область по отдельности
-        mask = (matrix_cleaned == label_value).astype(bool)  # Приводим к булевому типу
+
+        mask = (matrix_cleaned == label_value).astype(bool)
         smoothed_mask = binary_closing(mask, iterations=interations)
         smoothed[smoothed_mask] = label_value
 
-    
     return smoothed
 
 
@@ -106,13 +110,13 @@ def concat_masks(
     """ Склейка всех инстанс масок кластеризованных поверхностей
 
     Args:
-        instance_masks (Dict[np.uint8, Tuple[np.ndarray, int]]): 
+        instance_masks (Dict[np.uint8, Tuple[np.ndarray, int]]):
         Словарь с высотами и инстанс масками их поверхностей + количество поверхностей
 
     Returns:
         np.ndarray: Склейка всех инстанс масок поверхностей
     """
-    
+
     shape: Tuple[int] = next(iter(instance_masks.values()))[0].shape
 
     all_masks = np.zeros(shape)
@@ -121,64 +125,9 @@ def concat_masks(
     for _, (mask, quantity) in instance_masks.items():
         all_masks += mask + (mask > 0) * offset
         offset += quantity
-    
+
     return all_masks
 
-
-def create_height_map(
-    polygons_by_height: Dict[np.uint8, List[Polygon]],
-    resolution: int = 1,
-) -> np.ndarray:
-    """
-    Создаёт numpy карту высот из словаря полигонов.
-
-    :param polygons_by_height: Словарь {высота: [список полигонов (shapely.geometry.Polygon)]}
-    :param resolution: Разрешение сетки (шаг между точками по X и Y).
-    :return: numpy массив, представляющий карту высот.
-    """
-    # Определение границ всех полигонов
-    min_x, min_y = float('inf'), float('inf')
-    max_x, max_y = float('-inf'), float('-inf')
-
-    for height, polygons in polygons_by_height.items():
-        for polygon in polygons:
-            bounds = polygon.bounds  # (minx, miny, maxx, maxy)
-            min_x = min(min_x, bounds[0])
-            min_y = min(min_y, bounds[1])
-            max_x = max(max_x, bounds[2])
-            max_y = max(max_y, bounds[3])
-
-    # Создание пустой карты высот
-    width = int((max_x - min_x) / resolution) + 1
-    height = int((max_y - min_y) / resolution) + 1
-    height_map = np.zeros((height, width))
-
-    # Заполнение карты высот
-    for h, polygons in polygons_by_height.items():
-        for polygon in polygons:
-            if polygon.is_empty:
-                continue
-            area_threshold = 100
-            if polygon.area < area_threshold:
-                continue  # Пропускаем слишком маленькие полигоны
-            # Получение индексов точек внутри полигона
-            min_row = int((polygon.bounds[1] - min_y) / resolution)
-            max_row = int((polygon.bounds[3] - min_y) / resolution)
-            min_col = int((polygon.bounds[0] - min_x) / resolution)
-            max_col = int((polygon.bounds[2] - min_x) / resolution)
-            
-            for row in range(min_row, max_row + 1):
-                for col in range(min_col, max_col + 1):
-                    x = min_x + col * resolution
-                    y = min_y + row * resolution
-                    point = Point([(x, y)])
-                    if polygon.contains(point):
-                        height_map[row, col] = h
-
-    return height_map
-
-def round_coord(coord: float) -> int:
-    return int(coord) + 1 if coord - int(coord) > 0.5 else int(coord)
 
 def create_surface_map(
     polygons_by_idx: Dict[np.uint8, List[Polygon]],
@@ -218,7 +167,7 @@ def create_surface_map(
         max_row = int((polygon.bounds[3] - min_y) / resolution)
         min_col = int((polygon.bounds[0] - min_x) / resolution)
         max_col = int((polygon.bounds[2] - min_x) / resolution)
-        
+
         for row in range(min_row, max_row + 1):
             for col in range(min_col, max_col + 1):
                 x = min_x + col * resolution
@@ -226,7 +175,7 @@ def create_surface_map(
                 point = Point([(x, y)])
                 if polygon.contains(point):
                     height_map[row, col] = idx
-    
+
     coords = (
         slice(round_coord(min_x), round_coord(min_x + width)),
         slice(round_coord(min_y), round_coord(min_y + height)),
