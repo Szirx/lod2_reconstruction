@@ -1,8 +1,15 @@
-from typing import Tuple, List
+from typing import Tuple, Dict
+from time import time
+import argparse
 import numpy as np
+from PIL import Image
+from ultralytics import YOLO
+from scipy.ndimage import find_objects
+
 from src.create_polygons import create_surface_map
-from shapely.geometry import Polygon
 from src.regularization import convert_to_rectangles
+from src.obj_creator.obj_creator import merge_objs
+from src.obj_creator.dict_creator import create_dict_single_obj
 from src.modified_contours import (
     apply_canny_to_mask,
     thin_contours_skeletonization,
@@ -19,13 +26,14 @@ from src.coordinates import (
     crop_patches,
 )
 
+
 def create_single_object(
     img_array: np.ndarray,
     heatmap_array: np.ndarray,
     instance_mask: np.ndarray,
     crop_slice: Tuple[slice],
     resolution: float = 7.0,
-    flatness_threshold: float = 0.0,
+    flatness_threshold: int = 20,
     cell_area_threshold: float = 0.0,
     polygon_area_threshold: float = 0.0,
     ) -> Tuple[Tuple[slice], np.ndarray, dict]:
@@ -39,67 +47,110 @@ def create_single_object(
     closed_edges = close_contours(edges)
     thin_edges = thin_contours_skeletonization(closed_edges)
 
-    r_contours = convert_to_rectangles(
+    rectangle_contours = convert_to_rectangles(
         thin_edges=thin_edges,
         cell_area_threshold=cell_area_threshold,
         resolution=resolution,
     )
 
-    if r_contours:
-        mapp, coords = create_surface_map(r_contours, area_threshold=polygon_area_threshold)
+    if rectangle_contours:
+        mapp, coords = create_surface_map(rectangle_contours, area_threshold=polygon_area_threshold)
         replaced_crop = replace_crop(crop_slice, coords)
 
         surfaces_map, height_map = mapp.T, cropped_heatmap[coords]
 
         flat_surfaces, rough_surfaces = detect_flat_surfaces(surfaces_map, height_map, flatness_threshold)
         surfaces_mean = masked_mean_by_surfaces(surfaces_map, height_map, flat_surfaces)
-        gradient_height = compute_robust_linear_gradient(surfaces_map, height_map, rough_surfaces, r_contours)
+        gradient_height, gradient_matrices = compute_robust_linear_gradient(surfaces_map, height_map, rough_surfaces)
         gradient_matrix = apply_flat_surface_heights(surfaces_map, gradient_height, surfaces_mean)
-
-        right_contours: dict = {}
-
-        for k, v in r_contours.items():
-            right_contours[k] = Polygon([(x - coords[0].start,y - coords[1].start) for (x, y) in list(v.exterior.coords)])
-
-        info_dict_single_object: dict = {}
-
-        threshold: int = 7
-        for index, polygon in right_contours.items():
-            replaced_polygon: List[Tuple[float, float]] = [
-                (x + replaced_crop[0].start, y + replaced_crop[1].start)
-                for (x, y) in list(polygon.exterior.coords)
-            ]
-            if index in rough_surfaces:
-                
-                heights: list = []
-                
-                for (x, y) in list(polygon.exterior.coords):
-                    x_start = max(int(x) - threshold, 0)
-                    x_end = min(int(x) + threshold, gradient_matrix.shape[0])
-                    y_start = max(int(y) - threshold, 0)
-                    y_end = min(int(y) + threshold, gradient_matrix.shape[1])
-                    slice_heights = gradient_matrix[
-                                x_start: x_end,
-                                y_start: y_end,
-                            ].T
-                    heights.append(np.max(slice_heights))
-            
-            if Polygon(replaced_polygon).exterior.is_ccw:
-                replaced_polygon = replaced_polygon[::-1]
-                heights = heights[::-1]
-
-            info_dict_single_object[index] = {
-                'polygon': replaced_polygon,
-                'is_flat': True if index in flat_surfaces else False,
-                'mean_height': surfaces_mean[index] if index in flat_surfaces else None,
-                'heights': heights if index in rough_surfaces else None,
-            }
+        info_dict_single_object = create_dict_single_obj(
+            rectangle_contours,
+            gradient_matrices,
+            rough_surfaces,
+            flat_surfaces,
+            surfaces_mean,
+            coords,
+            replaced_crop,
+        )
 
         return replaced_crop, gradient_matrix.T, info_dict_single_object
     else:
         return None, None, None
 
+
+def main(
+    weights_path: str,
+    heatmap_path: str,
+    rgb_path: str,
+    resolution: float = 7.0,
+    flatness_threshold: float = 20,
+    cell_area_threshold: float = 0,
+    polygon_area_threshold: float = 0,
+    output_name: str = 'lod2',
+) -> None:
+    heatmap = np.array(Image.open(heatmap_path).resize((576, 1024)))
+    image = Image.open(rgb_path).resize((576, 1024))
+    model = YOLO(weights_path)
+    results = model(image)
+    instance_masks = results[0].masks.data.cpu()
+    image = np.array(image)
+
+    expansion: int = 10
+    replaced_crops: list = []
+    created_matrices: list = []
+    info_objects: Dict[str, list] = {'buildings': []}
+
+    start_time = time()
+    for instance_id in range(len(instance_masks)):
+        instance_mask = np.asarray(instance_masks[instance_id], dtype=np.uint8)
+
+        crop_slice: Tuple[slice] = find_objects(instance_mask)[0]
+
+        crop_slice =  (
+            slice(crop_slice[0].start - expansion, crop_slice[0].stop + expansion, crop_slice[0].step),
+            slice(crop_slice[1].start - expansion, crop_slice[1].stop + expansion, crop_slice[1].step),
+        )
+
+        replaced_crop, created_matrix, info_single_object = create_single_object(
+            image,
+            heatmap,
+            instance_mask,
+            crop_slice,
+            resolution=resolution,
+            flatness_threshold=flatness_threshold,
+            cell_area_threshold=cell_area_threshold,
+            polygon_area_threshold=polygon_area_threshold,
+        )
+        replaced_crops.append(replaced_crop)
+        created_matrices.append(created_matrix)
+        info_objects['buildings'].append(info_single_object)
+
+    merge_objs(info_objects, f'{output_name}.obj')
+
+    print(time() - start_time)
+
+
 if __name__ == '__main__':
-    weights_path: str = '../../../shared_data/users/avlasov/vaihingen.pt'
-    vai: str = '../../shared_data/datasets/Vaihingen/train/NDSM/area34.tif'
-    vai_rgb: str = '../../shared_data/datasets/Vaihingen/train/RGB/area34.tif'
+    parser = argparse.ArgumentParser(description="LoD2 for satellite image.")
+    parser.add_argument('--weights_path', type=str, required=True, help='Path to the weights file')
+    parser.add_argument('--heatmap_path', type=str, required=True, help='Path to the heatmap file')
+    parser.add_argument('--rgb_path', type=str, required=True, help='Path to the RGB image file')
+    parser.add_argument('--resolution', type=float, default=7.0, help='Resolution of grid cells for rectangle polygons (default: 7.0)')
+    parser.add_argument('--flatness_thd', type=int, default=20, help='Flatness threshold for surfaces (default: 20)')
+    parser.add_argument('--cell_area_thd', type=float, default=0.0, help='Cell area threshold for adding rectangle minipolygons in final polygon of surface (default: 0.0)')
+    parser.add_argument('--poly_area_thd', type=float, default=0.0, help='Area of polygon for removing from processing (default: 0.0)')
+    parser.add_argument('--output_name', type=str, default='lod2', help='Filename of output file with .obj format (default: "lod2")')
+
+
+    args = parser.parse_args()
+
+    main(
+        args.weights_path,
+        args.heatmap_path,
+        args.rgb_path,
+        args.resolution,
+        args.flatness_thd,
+        args.cell_area_thd,
+        args.poly_area_thd,
+        args.output_name,
+    )

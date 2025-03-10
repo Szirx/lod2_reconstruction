@@ -1,3 +1,4 @@
+from typing import List, Tuple
 import numpy as np
 import warnings
 
@@ -72,3 +73,53 @@ def create_image_dict(height_map: np.ndarray, pixel_multipolygons: list, resolut
         }
     
     return contours_with_height  
+
+
+def create_dict_single_obj(
+    rectangle_contours: dict,
+    gradient_matrices: List[np.ndarray],
+    rough_surfaces: List[int],
+    flat_surfaces: List[int],
+    surfaces_mean: dict,
+    coords: Tuple[slice],
+    replaced_crop: Tuple[slice],
+
+) -> dict:
+    right_contours: dict = {}
+
+    for k, v in rectangle_contours.items():
+        right_contours[k] = Polygon([(x - coords[0].start,y - coords[1].start) for (x, y) in list(v.exterior.coords)])
+
+    info_dict_single_object: dict = {}
+    rough_surfaces_iter: int = 0
+
+    for index, polygon in right_contours.items():
+        replaced_polygon: List[Tuple[float, float]] = [
+            (x + replaced_crop[0].start, y + replaced_crop[1].start)
+            for (x, y) in list(polygon.exterior.coords)
+        ]
+        heights: list = []
+
+        if index in rough_surfaces:
+            
+            
+            for (x, y) in list(polygon.exterior.coords):
+                heights.append(gradient_matrices[rough_surfaces_iter][
+                        min(int(x), gradient_matrices[rough_surfaces_iter].shape[0] - 1),
+                        min(int(y), gradient_matrices[rough_surfaces_iter].shape[1] - 1),
+                    ],
+                )
+            rough_surfaces_iter += 1
+        
+        if Polygon(replaced_polygon).exterior.is_ccw:
+            replaced_polygon = replaced_polygon[::-1]
+            heights = heights[::-1]
+
+        info_dict_single_object[index] = {
+            'polygon': replaced_polygon,
+            'is_flat': True if index in flat_surfaces else False,
+            'mean_height': surfaces_mean[index] if index in flat_surfaces else None,
+            'heights': heights if index in rough_surfaces else None,
+        }
+    
+    return info_dict_single_object

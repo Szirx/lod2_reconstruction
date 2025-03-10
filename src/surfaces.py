@@ -112,21 +112,23 @@ def detect_right_vector(polygon: Polygon, non_rob_vector: np.ndarray) -> set:
     return closest_vector
 
 
+
 def compute_robust_linear_gradient(
     surface_matrix: np.ndarray,
     height_matrix: np.ndarray,
     rough_surfaces: List[int],
-    r_contours: List[Polygon],
-) -> np.ndarray:
+) -> Tuple[np.ndarray, List[np.ndarray]]:
     """
     Создает линейный градиент внутри каждой области, используя метод наименьших квадратов 
     для нахождения направления наибольшего изменения высот.
 
     :param surface_matrix: 2D numpy массив, где указаны номера областей
     :param height_matrix: 2D numpy массив, где указаны значения высот
-    :return: 2D numpy массив с линейным градиентом по областям
+    :param rough_surfaces: Список идентификаторов областей, для которых нужно вычислить градиент
+    :return: 2D numpy массив с линейным градиентом по областям и список матриц с градиентами для каждой области
     """
     gradient_matrix = np.zeros_like(height_matrix, dtype=np.float32)
+    gradient_matrices = []
 
     for surface_id in rough_surfaces:
         if surface_id == 0:  # Пропускаем фон, если он есть
@@ -148,13 +150,21 @@ def compute_robust_linear_gradient(
         A = np.c_[X[:, 0], X[:, 1], np.ones(X.shape[0])]
         coeffs, _, _, _ = np.linalg.lstsq(A, heights, rcond=None)  # [a, b, c] -> плоскость z = ax + by + c
 
-        coeffs = tuple([coeffs[0], coeffs[1]])
-        # coeffs = detect_right_vector(r_contours[surface_id], coeffs)
-        # Вычисляем значения градиента в направлении [grad_x, grad_y]
-        for (x, y) in indices:
-            gradient_matrix[x, y] = coeffs[0] * (x - centroid[0]) + coeffs[1] * (y - centroid[1]) + np.mean(heights)
+        # Создаем матрицу градиента для текущей области
+        gradient_matrix_surface = np.zeros_like(height_matrix, dtype=np.float32)
+        
+        # Вычисляем значения градиента для всей области
+        for x in range(height_matrix.shape[0]):
+            for y in range(height_matrix.shape[1]):
+                gradient_matrix_surface[x, y] = coeffs[0] * (x - centroid[0]) + coeffs[1] * (y - centroid[1]) + np.mean(heights)
 
-    return gradient_matrix
+        # Добавляем матрицу градиента для текущей области в список
+        gradient_matrices.append(gradient_matrix_surface)
+
+        # Обновляем общую матрицу градиентов только в пределах маски
+        gradient_matrix[mask] = gradient_matrix_surface[mask]
+
+    return gradient_matrix, gradient_matrices
 
 
 def apply_flat_surface_heights(surface_matrix, gradient_matrix, flat_surface_heights):
