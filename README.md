@@ -42,13 +42,13 @@ python src/main.py --weights_path <path_to_weights> --heatmap_path <path_to_heat
 1. With all arguments specified:
 
 ```
-python src/main.py --weights_path ../../../shared_data/users/avlasov/vaihingen.pt --heatmap_path ../../shared_data/datasets/Vaihingen/train/NDSM/area34.tif --rgb_path ../../shared_data/datasets/Vaihingen/train/RGB/area34.tif --resolution 7.0 --flatness_thd 20 --cell_area_thd 0 --poly_area_thd 0 --output_name lod2
+python src/main.py --weights_path weights/vaihingen.pt --heatmap_path images/NDSM/area34.tif --rgb_path images/RGB/area34.tif --resolution 7.0 --flatness_thd 20 --cell_area_thd 0 --poly_area_thd 0 --output_name lod2
 ```
 
 2. Using default values for optional arguments:
 
 ```
-python src/main.py --weights_path ../../../shared_data/users/avlasov/vaihingen.pt --heatmap_path ../../shared_data/datasets/Vaihingen/train/NDSM/area34.tif --rgb_path ../../shared_data/datasets/Vaihingen/train/RGB/area34.tif
+python src/main.py --weights_path weights/vaihingen.pt --heatmap_path images/NDSM/area34.tif --rgb_path images/RGB/area34.tif
 ```
 
 In this case, the script will use the default values:

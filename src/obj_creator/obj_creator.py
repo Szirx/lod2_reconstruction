@@ -156,6 +156,10 @@ def create_building_obj(
                 vertices.append((x, y, 0))
                 # Top vertices
                 vertices.append((x, y, height))
+            triangles_bottom = triangulate_polygon(outline)
+            for triangle in triangles_bottom:
+                indices = [start_vertex_index + outline.index(point) * 2 for point in triangle]
+                obj_str_list.append(f"f {indices[0]}//1 {indices[1]}//1 {indices[2]}//1")
             outline_with_heights = [(x, y, height) for (x, y), height in zip(outline, heights)]
             triangles_top = triangulate_polygon_with_heights(outline_with_heights)
             for triangle in triangles_top:
